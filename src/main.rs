@@ -39,10 +39,27 @@ async fn main() -> Result<()> {
     let blockhash = block.blockhash;
     println!("✅ Blockhash for slot {}: {}", slot_number, blockhash);
     
-    // Use SHA256 of blockhash to pick winner
-    let hash = Sha256::digest(blockhash.into_bytes());
-    let num = u64::from_be_bytes(hash[..8].try_into().unwrap());
-    let winner_index = (num % participants.len() as u64) as usize;
+    // Use SHA256 of blockhash to pick winner (avoiding modulo bias)
+    let n_participants = participants.len() as u64;
+    let max_valid = (u64::MAX / n_participants) * n_participants;
+    
+    let mut hash = Sha256::digest(blockhash.into_bytes());
+    let mut offset = 0;
+    
+    let winner_index = loop {
+        if offset + 8 > 32 {
+            // If we've exhausted the hash, rehash to get more bytes
+            hash = Sha256::digest(&hash);
+            offset = 0;
+        }
+        
+        let num = u64::from_be_bytes(hash[offset..offset + 8].try_into().unwrap());
+        if num < max_valid {
+            break (num % n_participants) as usize;
+        }
+        
+        offset += 8;
+    };
     
     println!("🏆 Winner: {}", participants[winner_index]);
     
